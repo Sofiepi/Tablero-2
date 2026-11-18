@@ -1,0 +1,2339 @@
+---
+title: "Resumen epidemiológico semanal de ENOs"
+author: "GOE"
+format:
+  dashboard:
+    theme: Gapminder 
+    embed-resources: true
+editor: visual
+---
+
+```{r librerias}
+#| message: false
+#| warning: false
+#| echo: false
+
+#librerias
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(writexl)
+library(openxlsx)
+library(gridExtra)
+library(grid)
+library(treemapify)
+library(tidyverse)
+library(purrr)
+library(knitr)    
+library(plotly)
+library(stringr)
+library(kableExtra)
+library(gt)
+
+#bases para cargar: caba_filtrada_actual,  caba_total, historico (#cambiar el setwd)
+#setwd("C:/Users/")
+
+
+##Cargo ambos archivos
+caba_filtrada_actual <- readRDS("caba_filtrada_actual.rds")
+caba_filtrada_historico <- readRDS("caba_filtrada_historico.rds")
+caba_filtrada <- readRDS("caba_filtrada.rds")
+
+#Seleccion de anio actual
+anio_actual <- as.numeric(format(Sys.Date(), "%Y"))
+
+# Última semana disponible del año actual
+semana_actual <- max(caba_filtrada_actual$sepi_bes[caba_filtrada_actual$anio_bes == anio_actual], na.rm = TRUE)
+
+```
+
+A continuación se presentan datos a la semana epidemiológica `r semana_actual` del año `r anio_actual`. \*Fuente: notificaciones nominales del período 2019-2026.
+
+# Visualizacion general {scrolling="true"}
+
+## Row {height="700px"}
+
+### Column
+
+```{r treemap25}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 5
+#| fig.height: 5
+
+#-----treemap------- 
+# Año actual según tus datos
+anio_actual <- max(caba_filtrada_actual$anio_bes, na.rm = TRUE)
+
+# Última semana disponible del año actual
+semana_actual <- max(caba_filtrada_actual$sepi_bes[caba_filtrada_actual$anio_bes == anio_actual], na.rm = TRUE)
+
+ventana_movil <- (semana_actual - 7):semana_actual
+semana_inicio <- min(ventana_movil)
+semana_fin <- max(ventana_movil)
+
+# Total de notificaciones hasta esa semana para el año anterior
+n_anio_anterior <- caba_filtrada_actual %>%
+  filter(anio_bes == anio_actual - 1,
+    sepi_bes %in% ventana_movil) %>%
+  summarise(total = n()) %>%
+  pull(total)
+
+# Titulo automatico
+title_graph_25 <- paste0(
+  "Ventana móvil notificaciones año ", anio_actual - 1,
+  " - SE ", semana_inicio,  " a ", semana_actual,
+  " | N: ", n_anio_anterior)
+
+#2025
+#Count de grupo evento con todos los eventos(menos Autoinmunes, unidas otras enfermedades)
+treemap_25<-caba_filtrada_actual %>%
+  filter(
+    anio_bes == max(anio_bes, na.rm = TRUE) - 1,
+    sepi_bes %in% ventana_movil)
+
+
+treemap_25 <- treemap_25 %>%
+  mutate(recla_categoria = ifelse(
+    recla_categoria %in% c("Otros eventos de importancia",
+                           "Otras transmisibles"),
+    "Otras enfermedades",recla_categoria)) %>%
+  count(recla_categoria) %>%
+  filter(recla_categoria !="Autoinmunitarias")
+
+treemap_25 <- treemap_25 %>%
+  mutate(porcentaje =round ((n / sum(n)) * 100,0))
+
+#defino vercor colores
+colores_categorias <- c(
+  "Respiratorias" = "#5B8FA8",
+  "ITS" = "#F5C04A",
+  "EFE" = "#C03728",
+  "ETAs" = "#FD8F24",
+  "Zoonoticas y vectoriales" = "#C3C377",
+  "Materno-infantil" = "#E68C7C",
+  "Intoxicaciones/Exposiciones" = "#919C4C",
+  "Lesiones, salud mental y otros" = "#828585",
+  "Otras enfermedades" = "#6F5438")
+
+#grafico
+plot_ly(
+  data = treemap_25,
+  type = "treemap",
+  labels = ~recla_categoria,
+  parents = "",
+  values = ~n,
+  textinfo = "label+percent entry",
+  hovertemplate = paste(
+    "<b>%{label}</b><br>",
+    "Notificaciones: %{value}<br>",
+    "Porcentaje: %{customdata}%<extra></extra>"
+  ),
+  customdata = ~porcentaje,
+  marker = list(colors = colores_categorias[as.character(treemap_25$recla_categoria)])
+) %>%
+  layout(title = list(text = title_graph_25, x = 0.5, xanchor = "center"))
+
+
+```
+
+### Column
+
+```{r treemap26}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 5
+#| fig.height: 5
+
+#-----------------------------------------------
+# TREEMAP AÑO 2026
+#-----------------------------------------------
+
+anio_2026 <- anio_actual
+
+
+# Filtrar ÚNICAMENTE:
+# - Año 2026
+# - Semanas epidemiológicas de la ventana móvil
+# - Excluir Autoinmunitarias
+
+datos_2026 <- caba_filtrada_actual %>%
+  filter(
+    anio_bes == anio_2026,
+    sepi_bes >= semana_inicio,
+    sepi_bes <= semana_fin
+  ) %>%
+  mutate(
+    recla_categoria = ifelse(
+      recla_categoria %in% c(
+        "Otros eventos de importancia",
+        "Otras transmisibles"
+      ),
+      "Otras enfermedades",
+      recla_categoria
+    )
+  ) %>%
+  filter(
+    recla_categoria != "Autoinmunitarias"
+  )
+
+
+# Contar notificaciones por categoría
+treemap_26 <- datos_2026 %>%
+  count(recla_categoria) %>%
+  mutate(
+    porcentaje = round(
+      (n / sum(n)) * 100,
+      0
+    )
+  )
+
+
+# Total EXACTAMENTE igual a la suma del treemap
+n_anio_2026 <- sum(treemap_26$n)
+
+
+# Título
+title_graph_26 <- paste0(
+  "Ventana móvil notificaciones año ",
+  anio_2026,
+  " - SE ",
+  semana_inicio,
+  " a ",
+  semana_fin,
+  " | N: ",
+  n_anio_2026
+)
+
+
+#-----------------------------------------------
+# GRÁFICO TREEMAP 2026
+#-----------------------------------------------
+
+plot_ly(
+  data = treemap_26,
+  type = "treemap",
+  
+  labels = ~recla_categoria,
+  parents = "",
+  values = ~n,
+  
+  textinfo = "label+percent entry",
+  
+  hovertemplate = paste(
+    "<b>%{label}</b><br>",
+    "Notificaciones: %{value}<br>",
+    "Porcentaje: %{customdata}%<extra></extra>"
+  ),
+  
+  customdata = ~porcentaje,
+  
+  marker = list(
+    colors = colores_categorias[
+      as.character(treemap_26$recla_categoria)
+    ]
+  )
+  
+) %>%
+  
+  layout(
+    title = list(
+      text = title_graph_26,
+      x = 0.5,
+      xanchor = "center"
+    )
+  )
+
+
+```
+
+## Row {height="500px"}
+
+```{r serie_temporal_notificaciones}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 5
+#| fig.height: 3
+#| title: Serie temporal de notificaciones nominales totales de los ultimos 4 años (Linea vertical utimas 3 SE)
+
+##Línea temporal de notificaciones de todos los eventos de los ultimos cuatro años
+semana_corte <- semana_actual - 3
+
+
+# Resumen solo para los últimos 5 años
+caba_filtrada_resumen <- caba_filtrada %>%
+  filter(anio_bes >= anio_actual - 3) %>%
+  group_by(anio_bes, sepi_bes) %>%
+  summarise(n = n(), .groups = "drop")
+
+
+# Gráfico
+ggplot(caba_filtrada_resumen,
+       aes(x = as.numeric(sepi_bes),
+           y = n,
+           color = factor(anio_bes),
+           group = anio_bes)) +
+  geom_line(zice = 0.8) +
+  geom_vline(xintercept = semana_corte,
+             linetype = "dashed",
+             color = "#757575",
+             linewidth = 0.7) +
+  
+  scale_color_manual(values = c("2023" = "#6E8B3D", "2024" ="#EEAD0E",
+                                "2025" = "#CD7054",
+                                "2026" = "#36648B"))+
+  scale_x_continuous(
+    breaks = seq(5, 53, by = 5)   # semanas cada 5
+  ) + 
+  labs(
+    x = "Semana epidemiológica",
+    y = "Notificaciones",
+    color = "Año"
+  ) +
+  theme_minimal() +
+   theme(axis.text.x = element_text(angle = 0, vjust = 1))
+```
+
+```{r efectores}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 7
+#| fig.height: 4
+#| title: Porcentaje de notificaciones según tipo de efector
+
+
+caba_filtrada_actual <- caba_filtrada_actual %>%
+  mutate(carga_indicador = case_when(
+    .$carga_indicador == "caba_otros"  ~ "Nacional o Universitario",    
+    .$carga_indicador == "caba_publico"  ~ "CABA Público",
+    .$carga_indicador == "caba_privado"  ~ "CABA Privado",
+    .$carga_indicador == "otras_provincias_no_bs_as"  ~ "Otras Provincias",
+    .$carga_indicador == "otras_provincias_bs_as"  ~ "Provincia de Buenos Aires",
+    TRUE ~ "Sin dato"))
+
+
+tipo_efector <- caba_filtrada_actual %>%
+  group_by(carga_indicador) %>%
+  summarise(cantidad = n()) %>%
+  mutate(porcentaje = round((cantidad / sum(cantidad)) * 100,2)) %>%
+  ungroup()
+
+
+#análisis efectores por año
+
+tipo_efector <- tipo_efector %>%
+  rename("Efector" = "carga_indicador") %>%
+  rename("Cantidad" = "cantidad")
+
+#tipo_efector$tipo_efector <- factor(tipo_efector$Evento)
+
+p <- ggplot(tipo_efector, aes(
+  x = porcentaje,
+  y = reorder(Efector, porcentaje),
+  fill = Efector,
+  text = paste(
+    "Efector:", Efector,
+    "<br>Porcentaje:", porcentaje, "%"
+  )
+)) +
+  geom_bar(stat = "identity", position = position_dodge2(preserve = "single")) +
+  labs(
+    title = "",
+    x = "%",
+    y = ""
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 0, hjust = 0.5),
+    legend.position = "none"
+  ) +
+  scale_fill_manual(values = c(
+    "CABA Público" = "#00695C",
+    "CABA Privado" = "#009688",
+    "Otras Provincias" = "#FFE0B2",
+    "Provincia de Buenos Aires" = "#FFF3E0",
+    "Nacional o Universitario" = "#E0F2F1"
+  ))
+
+ggplotly(p, tooltip = "text")
+
+
+
+```
+
+## Row {height="500px"}
+
+```{r alertas}
+#| color: light
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 7
+#| fig.height: 4
+#| title: Alertas individuales
+
+#alertas 
+alerta_individual <- caba_filtrada_actual %>%
+  filter(tablero_tipo_alerta %in% c("alerta", "eliminadas")) %>%
+  pull(EVENTO)
+
+#filtro temporal: muestra alertas individuales de las ultimas dos semanas
+anio_actual <- max(caba_filtrada_actual$anio_bes, na.rm = TRUE)
+
+semana_actual <- max(caba_filtrada_actual$sepi_bes[caba_filtrada_actual$anio_bes == anio_actual], na.rm = TRUE)
+
+base_alertas_individuales <- caba_filtrada_actual %>%
+  filter(anio_bes == anio_actual,
+    EVENTO %in% alerta_individual,
+    sepi_bes %in% (semana_actual - 1):semana_actual) %>%
+  mutate(alerta_individual = str_detect(CLASIFICACION_MANUAL, regex("probable|confirmado", ignore_case = TRUE))) %>%
+  filter(alerta_individual == TRUE)
+
+#selecciono cual es la info que quiero mostrar en el tablero 
+base_alertas_individuales <- base_alertas_individuales %>%
+  select(IDEVENTOCASO, EVENTO, clasificacion_bes,SEPI_APERTURA, residente_bes)
+
+#renombro 
+
+base_alertas_individuales %>%
+  rename(
+    Evento = EVENTO,
+    `ID evento` = IDEVENTOCASO,
+    `Clasificacion` = clasificacion_bes,
+    `SE apertura` = SEPI_APERTURA,
+    `Residente` = residente_bes
+  ) %>%
+  arrange(`SE apertura`) %>%
+  knitr::kable(
+    caption = "Alertas individuales ultimas dos SE",
+    align = "c"
+  ) %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "center")
+
+```
+
+```{r variacion cuatrisemana}
+#| color: light
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 7
+#| fig.height: 4
+#| title: Alertas grupales
+
+semanas_ultimas_4 <- (semana_actual - 3):semana_actual
+semanas_anteriores_4 <- (semana_actual - 7):(semana_actual - 4)
+
+#tabla actual
+tabla_alertas_26 <- caba_filtrada_actual %>%
+  filter(anio_bes == 2026) %>%
+  filter(tablero_tipo_alerta == "aumento_inesperado_es_alerta") %>%
+  mutate(
+    periodo = case_when(
+      sepi_bes %in% semanas_anteriores_4 ~ "anterior",
+      sepi_bes %in% semanas_ultimas_4 ~ "actual",
+      TRUE ~ NA_character_
+    )
+  ) %>%
+  filter(!is.na(periodo)) %>%
+  group_by(EVENTO, periodo) %>%
+  summarise(casos = n(), .groups = "drop") %>%
+  tidyr::pivot_wider(
+    names_from = periodo,
+    values_from = casos,
+    values_fill = 0
+  ) %>%
+  mutate(
+     diferencia = actual - anterior,
+    variacion_pct = ifelse(
+      anterior == 0,
+      NA,
+      round(((actual - anterior) / anterior) * 100, 0)
+    )
+  )
+
+#tabla de ultimos dos años
+
+tabla_alertas_2526 <- caba_filtrada_actual %>%
+  filter(tablero_tipo_alerta == "aumento_inesperado_es_alerta") %>%
+  filter(sepi_bes %in% semanas_ultimas_4) %>%
+  group_by(anio_bes, EVENTO) %>%
+  summarise(casos = n(), .groups = "drop") %>%
+  tidyr::pivot_wider(
+    names_from = anio_bes,
+    values_from = casos,
+    values_fill = 0
+  ) %>%
+  mutate(
+    diferencia = `2026` - `2025`,
+    variacion_pct = ifelse(
+      `2025` == 0,
+      NA,
+      round(((`2026` - `2025`) / `2025`) * 100, 0)
+    )
+  )
+
+
+tabla_unida <- full_join(tabla_alertas_2526, tabla_alertas_26, by = c("EVENTO" = "EVENTO"))
+
+tabla_unida <- tabla_unida %>% 
+  mutate( alerta = 
+            case_when(diferencia.x > 0 & diferencia.y > 0 ~ "Aumento en ambas",
+                      diferencia.x > 0 ~ "Aumento año anterior",
+                      diferencia.y > 0 ~ "Aumento cuatrisemana anterior",
+                      TRUE ~ "revisar"))
+
+tabla_unida <- tabla_unida %>% 
+  filter(alerta != "revisar")
+
+tabla_unida %>%
+  mutate(across(where(is.numeric), ~replace_na(.x, 0))) %>%
+  rename(
+    Evento = EVENTO,
+    `Notificaciones 2025` = "2025",
+    `Notificaciones 2026` = "2026",
+    `Variacion abs` = diferencia.x,
+    `Variacion %` = variacion_pct.x,
+    `Cuatrisemana anterior`= anterior,
+    `Cuatrisemana actual` = actual,
+    `Variacion abs 4SE` = diferencia.y,
+    `Variacion % 4SE` = variacion_pct.y,
+     `Alerta` = alerta) %>%
+  select(Evento,`Notificaciones 2025`, `Notificaciones 2026`,`Variacion abs`,`Variacion %`,
+         `Cuatrisemana anterior`,`Cuatrisemana actual`, `Variacion abs 4SE`, `Variacion % 4SE`,
+         Alerta) %>%
+   knitr::kable(
+    caption = paste(
+  "Alerta por variacion a cuatrisemana anterior - incluye semanas",
+  paste(semanas_ultimas_4, collapse = ", ")),
+    align = "c"
+  ) %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+
+```
+
+## Row {height="500px"}
+
+### Column
+
+```{r variacion semanal}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 7
+#| fig.height: 4
+#| title: Comparacion semanal de notificaciones totales a misma SE año 25-26 Eventos seleccionados
+#----------Variacion semanal de eventos seleccionados----
+###---------Diarrea-----------
+
+diarreas<- caba_filtrada_actual %>%
+  filter(recla_categoria == "ETAs")
+
+agrupado_ventana <- diarreas %>%
+  group_by( tablero_tipo_alerta, GRUPO_EVENTO) %>%
+  summarise( cantidad = n())
+
+diarreas <- diarreas %>%
+  filter(tablero_tipo_alerta == "aumento_inesperado_es_alerta")
+
+diarreas <- diarreas %>%
+  filter(GRUPO_EVENTO != "Otros eventos de importancia para la salud pública") %>%
+  filter(GRUPO_EVENTO !="Hepatitis virales") %>%
+  filter(GRUPO_EVENTO !="Equinococosis")
+
+##busqueda de diarreas 2026
+diarrea_2026_ventana <- diarreas %>%
+  filter( anio_bes == 2026)
+
+diarreas_2026_ventana_caba_actual<- caba_filtrada_actual %>%
+  filter(recla_categoria == "ETAs") %>%
+  filter(anio_bes == 2026) %>%
+  filter(GRUPO_EVENTO != "Otros eventos de importancia para la salud pública") %>%
+  filter(GRUPO_EVENTO !="Hepatitis virales") %>%
+  filter(GRUPO_EVENTO !="Equinococosis")  %>%
+  filter(tablero_tipo_alerta == "aumento_inesperado_es_alerta")
+
+diarrea_sepi <- diarreas %>%
+  group_by(anio_bes, sepi_bes) %>%
+  summarise(cantidad = n(), .groups = "drop")
+
+# Comparar semanas entre año actual y año actual menos 1
+variacion_anual_diarrea <- diarrea_sepi %>%
+  pivot_wider(
+    names_from = anio_bes, 
+    values_from = cantidad, 
+    names_prefix = "anio_"
+  ) %>%
+  mutate(
+    variacion_absoluta = anio_2026 - anio_2025,
+    variacion_porcentual = round((anio_2026 - anio_2025) / anio_2025 * 100, 2),
+    Evento = "Diarreas"
+  ) %>%
+  filter(sepi_bes <= max(sepi_bes[!is.na(anio_2026)])) %>%
+  arrange(sepi_bes)  # Ordenar por número de semana
+
+
+#Ventana distante Animal ponzoñoso
+
+veneno_animal<- caba_filtrada_actual %>%
+  filter(recla_categoria == "Lesiones, salud mental y otros")
+
+veneno_agrupado_ventana <- veneno_animal %>%
+  group_by( tablero_tipo_alerta, GRUPO_EVENTO) %>%
+  summarise(cantidad = n())
+
+veneno_animal <- veneno_animal %>%
+  filter(tablero_tipo_alerta == "alerta")
+
+veneno_animal <- veneno_animal %>%
+filter(str_detect(GRUPO_EVENTO,"ñoso"))
+  
+#Armar base por semana epidemiológica
+
+veneno_sepi <- veneno_animal %>%
+  group_by(anio_bes, sepi_bes) %>%
+  summarise(cantidad = n(), .groups = "drop")
+
+#Comparar semanas entre año actual y año actual menos 1
+
+veneno_variacion_anual <- veneno_sepi %>%
+  pivot_wider(
+    names_from = anio_bes, 
+    values_from = cantidad, 
+    names_prefix = "anio_"
+  ) %>%
+  mutate(
+    variacion_absoluta = anio_2026 - anio_2025,
+    variacion_porcentual = round((anio_2026 - anio_2025) / anio_2025 * 100, 2),
+    Evento = "Envenenamiento por animal ponzoñoso"
+  ) %>%
+  filter(sepi_bes <= max(sepi_bes[!is.na(anio_2026)])) %>%
+  arrange(sepi_bes)  # Ordenar por número de semana
+
+#Variación APR 
+
+zoonoticas <- caba_filtrada_actual %>%
+  filter(recla_categoria == "Zoonoticas y vectoriales")
+
+zoonoticas_agrupado_ventana <- zoonoticas %>%
+  group_by( tablero_tipo_alerta, GRUPO_EVENTO) %>%
+  summarise(cantidad = n())
+
+zoonoticas <- zoonoticas %>%
+  filter(tablero_tipo_alerta == "aumento_inesperado_es_alerta")
+
+apr <- zoonoticas %>%
+  filter(GRUPO_EVENTO == "Rabia")
+
+#Armar base por semana epidemiológica
+
+apr_sepi <- apr %>%
+  group_by(anio_bes, sepi_bes) %>%
+  summarise(cantidad = n(), .groups = "drop")
+
+# Comparar semanas entre año actual y año actual menos 1
+apr_variacion_anual <- apr_sepi %>%
+  pivot_wider(
+    names_from = anio_bes, 
+    values_from = cantidad, 
+    names_prefix = "anio_"
+  ) %>%
+  mutate(
+    variacion_absoluta = anio_2026 - anio_2025,
+    variacion_porcentual = round((anio_2026 - anio_2025) / anio_2025 * 100, 2),
+    Evento = "APR"
+  ) %>%
+  filter(sepi_bes <= max(sepi_bes[!is.na(anio_2026)])) %>%
+  arrange(sepi_bes)  # Ordenar por número de semana
+
+##Variación CHAGAS MATERNO INFATIL
+
+materno_infantil <- caba_filtrada_actual%>%
+  filter(recla_categoria == "Materno-infantil")
+
+materno_infantil_agrupado <- materno_infantil%>%
+  group_by(tablero_tipo_alerta, EVENTO)%>%
+  summarise(cantidad = n())
+
+chagas_congenito <- materno_infantil %>%
+  filter(EVENTO == "Chagas agudo congénito")
+
+#Armar base por semana epidemiológica
+
+chagas_congenito_sepi <- chagas_congenito %>%
+  group_by(anio_bes, sepi_bes) %>%
+  summarise(cantidad = n(), .groups = "drop")
+
+# Comparar semanas entre año actual y año actual menos 1
+
+chagas_congenito_variacion_anual <- chagas_congenito_sepi %>%
+  pivot_wider(
+    names_from = anio_bes, 
+    values_from = cantidad, 
+    names_prefix = "anio_"
+  ) %>%
+  mutate(
+    variacion_absoluta = anio_2026 - anio_2025,
+    variacion_porcentual = round((anio_2026 - anio_2025) / anio_2025 * 100, 2),
+    Evento = "Chagas agudo congénito"
+  ) %>%
+  filter(sepi_bes <= max(sepi_bes[!is.na(anio_2026)])) %>%
+  arrange(sepi_bes)  # Ordenar por número de semana
+
+#--------------------coqueluche-----------------------------
+
+coqueluche<- caba_filtrada_actual %>%
+  filter(recla_categoria == "Respiratorias")
+
+agrupado_ventana <- coqueluche %>%
+  group_by( tablero_tipo_alerta, GRUPO_EVENTO) %>%
+  summarise( cantidad = n())
+
+coqueluche <- coqueluche %>%
+  filter(GRUPO_EVENTO == "Coqueluche")
+
+coqueluche_sepi <- coqueluche %>%
+  group_by(anio_bes, sepi_bes) %>%
+  summarise(cantidad = n(), .groups = "drop")
+
+coque_variacion_anual <- coqueluche_sepi %>%
+  pivot_wider(
+    names_from = anio_bes, 
+    values_from = cantidad, 
+    names_prefix = "anio_"
+  ) %>%
+  mutate(
+    variacion_absoluta = anio_2026 - anio_2025,
+    variacion_porcentual = round((anio_2026 - anio_2025) / anio_2025 * 100, 2),
+    Evento = "Coqueluche"
+  ) %>%
+  filter(sepi_bes <= max(sepi_bes[!is.na(anio_2026)])) %>%
+  arrange(desc(sepi_bes))
+
+
+#sifilis
+
+its <- caba_filtrada_actual %>%
+  filter(recla_categoria== "ITS")
+
+its_agrupado_ventana <- its %>%
+  group_by( tablero_tipo_alerta, EVENTO) %>%
+  summarise( cantidad = n())
+
+
+sifilis <- its %>%
+  filter(EVENTO == "Sífilis")
+
+sifilis_sepi <- sifilis %>%
+  group_by(anio_bes, sepi_bes) %>%
+  summarise(cantidad = n(), .groups = "drop")
+
+sifilis_variacion_anual <- sifilis_sepi %>%
+  pivot_wider(
+    names_from = anio_bes, 
+    values_from = cantidad, 
+    names_prefix = "anio_"
+  ) %>%
+  mutate(
+    variacion_absoluta = anio_2026 - anio_2025,
+    variacion_porcentual = round((anio_2026 - anio_2025) / anio_2025 * 100, 2),
+    Evento = "Sífilis"
+  ) %>%
+  filter(sepi_bes <= max(sepi_bes[!is.na(anio_2026)])) %>%
+  arrange(desc(sepi_bes))
+
+#VIH
+
+its <- caba_filtrada_actual %>%
+  filter(recla_categoria== "ITS")
+
+its_agrupado_ventana <- its %>%
+  group_by( tablero_tipo_alerta, EVENTO) %>%
+  summarise( cantidad = n())
+
+vih <- its %>%
+  filter(EVENTO == "VIH")
+
+vih_sepi <- vih %>%
+  group_by(anio_bes, sepi_bes) %>%
+  summarise(cantidad = n(), .groups = "drop")
+
+vih_variacion_anual <- vih_sepi %>%
+  pivot_wider(
+    names_from = anio_bes, 
+    values_from = cantidad, 
+    names_prefix = "anio_"
+  ) %>%
+  mutate(
+    variacion_absoluta = anio_2026 - anio_2025,
+    variacion_porcentual = round((anio_2026 - anio_2025) / anio_2025 * 100, 2),
+    Evento = "VIH"
+  ) %>%
+  filter(sepi_bes <= max(sepi_bes[!is.na(anio_2026)])) %>%
+  arrange(desc(sepi_bes))
+
+#armar base con eventos - semana - variación
+
+#diarrea - ponzoñozas - apr - chagas congénito - coqueluche
+
+
+variaciones_unidas <- rbind(variacion_anual_diarrea,coque_variacion_anual,
+                            apr_variacion_anual,chagas_congenito_variacion_anual,
+                            veneno_variacion_anual,sifilis_variacion_anual,vih_variacion_anual)
+
+#variaciones a mayor sepi_bes disponible por evento
+
+variaciones_unidas_ultimasepi <- variaciones_unidas %>%
+  group_by(Evento) %>%
+  slice_max(sepi_bes, n = 1, with_ties = FALSE) %>%
+  ungroup()
+
+
+###GRAFICO QUE SI con variación absoluta #######################
+
+##IMPORTANTE!! HAY QUE CORRERLO Y VER SI ES NECESARIO AJUSTAR LAS ESCALAS MANUALMENTE 
+#SE AJUSTAN EN EL SCALE CONTINUS Y EN CADA GEOM SEGMENT
+
+#indicarle que evento es un FACTOR
+variaciones_unidas_ultimasepi$Evento <- factor(variaciones_unidas_ultimasepi$Evento)
+
+
+# Calcular límite automático para variación absoluta
+
+# Buscar el valor absoluto más grande
+# Calcular límite automático para variación absoluta
+
+lim_abs <- max(
+  abs(variaciones_unidas_ultimasepi$variacion_absoluta),
+  na.rm = TRUE
+)
+
+# Redondear hacia arriba al entero siguiente
+lim_abs <- ceiling(lim_abs)
+
+# Asegurar un mínimo de 10
+lim_abs <- max(lim_abs, 10)
+
+
+ggplot(variaciones_unidas_ultimasepi, aes(y = Evento)) +
+  
+  # Fondo verde (negativos)
+  geom_segment(
+    aes(x = -lim_abs, xend = 0, y = Evento, yend = Evento),
+    linewidth = 6,
+    color = "#548B54"
+  ) +
+  
+  # Fondo rojo (positivos)
+  geom_segment(
+    aes(x = 0, xend = lim_abs, y = Evento, yend = Evento),
+    linewidth = 6,
+    color = "#8B3A3A"
+  ) +
+  
+  # Tick central
+  geom_segment(
+    aes(
+      x = 0,
+      xend = 0,
+      y = as.numeric(Evento) - 0.3,
+      yend = as.numeric(Evento) + 0.3
+    ),
+    linewidth = 1,
+    color = "#8B8878"
+  ) +
+  
+  # Indicador de variación
+  geom_segment(
+    aes(
+      x = ifelse(is.na(variacion_absoluta), 0, variacion_absoluta),
+      xend = ifelse(is.na(variacion_absoluta), 0, variacion_absoluta),
+      y = as.numeric(Evento) - 0.5,
+      yend = as.numeric(Evento) + 0.5
+    ),
+    linewidth = 1.4,
+    color = "black"
+  ) +
+  
+  # Escala X con números enteros
+  scale_x_continuous(
+    limits = c(-lim_abs, lim_abs),
+    breaks = pretty(
+      c(-lim_abs, lim_abs),
+      n = 10
+    )
+  ) +
+  
+  labs(
+    x = "Variación absoluta",
+    y = "",
+    title = paste("Semana", unique(variaciones_unidas_ultimasepi$sepi_bes))
+  ) +
+  
+  theme_minimal() +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.y = element_text(size = 10),
+    axis.ticks.y = element_blank(),
+    panel.grid = element_blank()
+  )
+
+```
+
+### Column
+
+```{r variacion porcentual}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 7
+#| fig.height: 4
+#| title: Comparacion semanal porcentual de notificaciones totales a misma SE año 25-26 Eventos seleccionados
+###prueba gráfico con variación porcentual
+
+
+
+#indicarle que evento es un FACTOR
+variaciones_unidas_ultimasepi$Evento <- factor(variaciones_unidas_ultimasepi$Evento)
+
+# Calcular límite automático para variación porcentual
+lim_pct <- max(
+  abs(variaciones_unidas_ultimasepi$variacion_porcentual),
+  na.rm = TRUE
+)
+
+# Agregar 10% de margen visual
+lim_pct <- lim_pct * 1.10
+
+# Elegir cantidad de cortes del eje
+saltos_pct <- pretty(
+  c(-lim_pct, lim_pct),
+  n = 8
+)
+
+# Indicar que Evento es factor
+variaciones_unidas_ultimasepi$Evento <- factor(
+  variaciones_unidas_ultimasepi$Evento
+)
+
+ggplot(variaciones_unidas_ultimasepi, aes(y = Evento)) +
+  
+  # Fondo verde (negativos)
+  geom_segment(
+    aes(
+      x = -lim_pct,
+      xend = 0,
+      y = Evento,
+      yend = Evento
+    ),
+    linewidth = 6,
+    color = "#548B54"
+  ) +
+  
+  # Fondo rojo (positivos)
+  geom_segment(
+    aes(
+      x = 0,
+      xend = lim_pct,
+      y = Evento,
+      yend = Evento
+    ),
+    linewidth = 6,
+    color = "#8B3A3A"
+  ) +
+  
+  # Tick central en 0
+  geom_segment(
+    aes(
+      x = 0,
+      xend = 0,
+      y = as.numeric(Evento) - 0.3,
+      yend = as.numeric(Evento) + 0.3
+    ),
+    linewidth = 1,
+    color = "#8B8878"
+  ) +
+  
+  # Línea de variación observada
+  geom_segment(
+    aes(
+      x = ifelse(is.na(variacion_porcentual), 0, variacion_porcentual),
+      xend = ifelse(is.na(variacion_porcentual), 0, variacion_porcentual),
+      y = as.numeric(Evento) - 0.5,
+      yend = as.numeric(Evento) + 0.5
+    ),
+    linewidth = 1.4,
+    color = "black"
+  ) +
+  
+  # Escala automática
+  scale_x_continuous(
+    limits = c(-lim_pct, lim_pct),
+    breaks = saltos_pct
+  ) +
+  
+  labs(
+    x = "Variación porcentual",
+    y = "",
+    title = paste(
+      "Semana",
+      unique(variaciones_unidas_ultimasepi$sepi_bes)
+    )
+  ) +
+  
+  theme_minimal() +
+  theme(
+    axis.title.y = element_blank(),
+    axis.text.y = element_text(size = 10),
+    axis.ticks.y = element_blank(),
+    panel.grid = element_blank()
+  )
+```
+
+# Grupo de eventos {scrolling="true"}
+
+## Row {height="700%"}
+
+```{r serie temporal grupo evento}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 10
+#| fig.height: 8
+#| title: Series temporales de notificaciones nominales por grupo de evento 
+#----------Lineas temporales por recla_categoria------------
+## Serie temporal por cada recla_categoria (excluyendo Autoinmunitarias)
+
+#calcular  2024
+serie_categoria_24 <- caba_filtrada_historico %>%
+  filter(anio_bes == 2024) %>%
+  filter(recla_categoria != "Autoinmunitarias") %>%
+  group_by(recla_categoria, anio_bes, sepi_bes) %>%
+  summarise(casos = n(), .groups = "drop")
+
+#serie de caba actual 
+serie_categorias <- caba_filtrada_actual %>%
+  filter(recla_categoria != "Autoinmunitarias") %>%
+  group_by(recla_categoria, anio_bes, sepi_bes) %>%
+  summarise(casos = n(), .groups = "drop")
+#juntar
+serie_categorias <- bind_rows(serie_categoria_24,serie_categorias)
+
+##graficos de serie temporal
+
+ggplot(serie_categorias,
+       aes(x = sepi_bes,
+           y = casos,
+           color = factor(anio_bes),
+           size = factor(anio_bes))) +
+  geom_line() +
+  geom_vline(xintercept = semana_corte,
+             linetype = "dashed",
+             color = "#757575",
+             linewidth = 0.7) +
+  scale_color_manual(values = c("2024" ="#A9A9A9",
+                                "2025" = "#CD7054",
+                                "2026" = "#36648B")) +
+  scale_size_manual(values = c("2024" = 0.5,  
+                               "2025" = 0.5,  
+                               "2026" = 0.8)) +
+  facet_wrap(~ recla_categoria, ncol = 3, scales = "free_y") +
+  scale_x_continuous(breaks = seq(5, 52, by = 5)) +
+  labs(
+    x = "Semana epidemiológica",
+    y = "Notificaciones",
+    color = "Año",
+    size = "Año"  
+  ) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 0, vjust = 0.5))
+```
+
+# Eventos
+
+## Row {.tabset}
+
+### Sífilis
+
+#### Row
+
+##### Column
+
+```{r sifilis_series}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 10
+#| fig.height: 6
+#| title: !expr paste0("Confirmados y probables por evento y año, hasta SE ", semana_actual)
+
+##Armo la base con todas las sifilis (congenita y en gestantes incluidas)
+sifilis_totales <- caba_filtrada_actual %>%
+  filter(
+    str_detect(EVENTO, "Sífilis"),
+    GRUPO_EVENTO != "Banco de Sangre"
+  )
+
+##Elimino clasificaciones de banco de sangre
+sifilis_totales <- sifilis_totales %>%
+  filter(
+    !CLASIFICACION_MANUAL %in% c(
+      "Caso sospechoso en banco de sangre",
+      "Caso probable en banco de sangre"
+    )
+  )
+
+
+
+##Me quedo con confirmados y probables
+sifilis_totales_cp <- sifilis_totales %>%
+  filter(clasificacion_bes %in% c("C", "P"))
+
+##Serie temporal
+sifilis_serie_temporal <- sifilis_totales_cp %>%
+  count(anio_bes, sepi_bes, EVENTO)
+
+##Máximo eje Y
+max_y_sifilis <- max(
+  sifilis_serie_temporal$n,
+  na.rm = TRUE
+)
+
+
+##Gráfico
+sifilis_serie_temporal %>%
+  filter(
+    anio_bes %in% c(anio_actual - 1, anio_actual)
+  ) %>%
+  ggplot(
+    aes(
+      x = sepi_bes,
+      y = n,
+      color = EVENTO
+    )
+  ) +
+  geom_smooth(
+    method = "loess",
+    span = 0.4,
+    se = FALSE,
+    linewidth = 1.5,
+    data = \(df) dplyr::filter(df, sepi_bes <= semana_actual)
+  ) +
+  facet_wrap(
+    ~anio_bes,
+    ncol = 2
+  ) +
+  scale_color_manual(
+    values = c(
+      "Sífilis" = "#FA8072",
+      "Sífilis congénita" = "#EE8262",
+      "Sífilis en personas gestantes" = "#8B4C39",
+      "Sífilis - RN expuesto en investigación" = "#DAA520"
+    )
+  ) +
+  scale_x_continuous(
+    breaks = seq(1, semana_actual, by = 5),
+    limits = c(1, semana_actual)
+  ) +
+  scale_y_continuous(
+    limits = c(0, max_y_sifilis)
+  ) +
+  labs(
+    x = "Semana epidemiológica",
+    y = "Casos",
+    color = "Evento"
+  ) +
+  theme_minimal() +
+  theme(
+    legend.position = "bottom"
+  )
+```
+
+##### Column {width="50"}
+
+```{r sifilis_sexo}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 10
+#| fig.height: 6
+#| title: !expr paste0("Confirmados y probables por sexo y año, hasta SE ", semana_actual)
+##Distribución por sexo según año
+sifilis_general_sexo <- sifilis_totales %>%
+  filter(
+    EVENTO == "Sífilis",
+    clasificacion_bes %in% c("C", "P"),
+    sepi_bes <= semana_actual,
+    anio_bes %in% c(anio_actual - 1, anio_actual)
+  ) %>%
+  count(anio_bes, SEXO)
+
+## Gráfico
+ggplot(
+  sifilis_general_sexo,
+  aes(x = as.factor(anio_bes), y = n, fill = SEXO)
+) +
+  geom_col(
+    position = "fill",
+    width = 0.7
+  ) +
+  scale_y_continuous(labels = scales::percent) +
+  scale_fill_manual(
+    values = c(
+      "F" = "#FF8C69",
+      "M" = "#CD7054",
+      "A" = "#8B4C39"
+    )
+  ) +
+  labs(
+    x = "Año",
+    y = "Porcentaje",
+    fill = "Sexo"
+  ) +
+  theme_minimal()
+```
+
+#### Row
+
+##### Column {width="50"}
+
+```{r sifilis_tabla}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 10
+#| fig.height: 6
+#| title: !expr paste0("Clasificación de notificaciones de Sífilis y Sífilis congénita hasta SE ", semana_actual, ".")
+
+##Sífilis
+sifilis_general <- sifilis_totales %>%
+  filter(
+    EVENTO == "Sífilis",
+    sepi_bes <= semana_actual
+  ) %>%
+  count(anio_bes, CLASIFICACION_MANUAL) %>%
+  group_by(anio_bes) %>%
+  mutate(
+    porcentaje = round(n / sum(n) * 100, 1)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    valor = paste0(n, " (", porcentaje, "%)")
+  ) %>%
+  select(CLASIFICACION_MANUAL, anio_bes, valor) %>%
+  pivot_wider(
+    names_from = anio_bes,
+    values_from = valor,
+    values_fill = "0 (0%)"
+  ) %>%
+  rename(Clasificación = CLASIFICACION_MANUAL)
+
+## Orden (sin tocar Totales)
+orden_general <- sifilis_general %>%
+  mutate(
+    orden = suppressWarnings(as.numeric(gsub("\\D", "", .[[2]])))
+  ) %>%
+  arrange(desc(orden)) %>%
+  select(-orden)
+
+## Totales general
+totales <- sifilis_totales %>%
+  filter(
+    EVENTO == "Sífilis",
+    sepi_bes <= semana_actual
+  ) %>%
+  count(anio_bes) %>%
+  mutate(
+    valor = paste0(n, " (100%)")
+  ) %>%
+  select(anio_bes, valor) %>%
+  pivot_wider(
+    names_from = anio_bes,
+    values_from = valor
+  ) %>%
+  mutate(
+    Clasificación = "Total"
+  ) %>%
+  select(Clasificación, everything())
+
+sifilis_general <- orden_general %>%
+  filter(Clasificación != "Total") %>%
+  bind_rows(totales)
+
+tabla_general <- sifilis_general %>%
+  gt() %>%
+  tab_header(title = "Sífilis") %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(rows = Clasificación == "Total")
+  )
+
+
+##Sífilis congénita
+sifilis_congenita <- sifilis_totales %>%
+  filter(
+    EVENTO == "Sífilis congénita",
+    sepi_bes <= semana_actual
+  ) %>%
+  count(anio_bes, CLASIFICACION_MANUAL) %>%
+  group_by(anio_bes) %>%
+  mutate(
+    porcentaje = round(n / sum(n) * 100, 1)
+  ) %>%
+  ungroup() %>%
+  mutate(
+    valor = paste0(n, " (", porcentaje, "%)")
+  ) %>%
+  select(CLASIFICACION_MANUAL, anio_bes, valor) %>%
+  pivot_wider(
+    names_from = anio_bes,
+    values_from = valor,
+    values_fill = "0 (0%)"
+  ) %>%
+  rename(Clasificación = CLASIFICACION_MANUAL)
+
+## Orden congénita
+orden_cong <- sifilis_congenita %>%
+  mutate(
+    orden = suppressWarnings(as.numeric(gsub("\\D", "", .[[2]])))
+  ) %>%
+  arrange(desc(orden)) %>%
+  select(-orden)
+
+## Totales congénita
+totales_cong <- sifilis_totales %>%
+  filter(
+    EVENTO == "Sífilis congénita",
+    sepi_bes <= semana_actual
+  ) %>%
+  count(anio_bes) %>%
+  mutate(
+    valor = paste0(n, " (100%)")
+  ) %>%
+  select(anio_bes, valor) %>%
+  pivot_wider(
+    names_from = anio_bes,
+    values_from = valor
+  ) %>%
+  mutate(
+    Clasificación = "Total"
+  ) %>%
+  select(Clasificación, everything())
+
+sifilis_congenita <- orden_cong %>%
+  filter(Clasificación != "Total") %>%
+  bind_rows(totales_cong)
+
+tabla_congenita <- sifilis_congenita %>%
+  gt() %>%
+  tab_header(title = "Sífilis congénita") %>%
+  tab_style(
+    style = cell_text(weight = "bold"),
+    locations = cells_body(rows = Clasificación == "Total")
+  )
+
+
+##Grafico tablas
+htmltools::div(
+  style = "display:flex; gap:30px; align-items:flex-start;",
+  htmltools::div(
+    style = "flex:1; min-width:0;",
+    tabla_general
+  ),
+  htmltools::div(
+    style = "flex:1; min-width:0;",
+    tabla_congenita
+  )
+)
+```
+
+### Hepatitis Virales
+
+#### Row
+
+##### Column
+
+```{r hepatitis2025}
+#| message: false
+#| warning: false
+#| echo: false
+#| title: !expr glue::glue("Año {anio_actual - 1}")
+
+##Filtrar por grupo de evento "Hepatitis virales" a misma SE ambos años
+hepatitis_virales <- caba_filtrada_actual %>% 
+  filter(
+    GRUPO_EVENTO == "Hepatitis virales",
+    (anio_bes == anio_actual &
+       sepi_bes <= semana_actual) |
+    (anio_bes == anio_actual - 1 &
+       sepi_bes <= semana_actual)
+  )
+
+##Para hacer la tabla del 2025
+tabla_hepatitis2025 <- hepatitis_virales %>%
+  filter(
+    EVENTO %in% c(
+      "Hepatitis A",
+      "Hepatitis B",
+      "Hepatitis C",
+      "Hepatitis D",
+      "Hepatitis E"
+    ),
+    anio_bes == (anio_actual - 1)
+  ) %>%
+  mutate(
+    clasificacion_bes = recode(
+      clasificacion_bes,
+      "C" = "Confirmado",
+      "P" = "Probable",
+      "D" = "Descartado",
+      "S" = "Sospechoso"
+    )
+  ) %>%
+  count(EVENTO, clasificacion_bes) %>%
+  pivot_wider(
+    names_from = clasificacion_bes,
+    values_from = n,
+    values_fill = 0
+  ) %>%
+  mutate(
+    Total = rowSums(across(where(is.numeric)))
+  )   %>%
+  select(EVENTO, Confirmado, Probable, Sospechoso, Descartado, Total)
+
+##Gráfico de la tabla
+tabla_hepatitis2025 %>%
+  gt()
+
+```
+
+##### Column
+
+```{r serie_temporal_hepatitis}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 12
+#| fig.height: 6
+#| title: !expr glue::glue("Serie temporal total de notificaciones {anio_actual - 1}-{anio_actual}")
+
+##Tabla para el gráfico
+serie_hepatitis <- caba_filtrada_actual %>%
+  filter(
+    GRUPO_EVENTO == "Hepatitis virales",
+    EVENTO %in% c(
+      "Hepatitis A",
+      "Hepatitis B",
+      "Hepatitis C",
+      "Hepatitis D",
+      "Hepatitis E"
+    ),
+    anio_bes %in% c(anio_actual - 1, anio_actual),
+    sepi_bes <= semana_actual
+  ) %>%
+  group_by(anio_bes, sepi_bes, EVENTO) %>%
+  summarise(
+    notificaciones = n(),
+    .groups = "drop"
+  )
+
+
+##Gráfico
+ggplot(
+  serie_hepatitis,
+  aes(
+    x = sepi_bes,
+    y = notificaciones,
+    color = EVENTO
+  )
+) +
+  geom_smooth(
+    se = FALSE,
+    linewidth = 1.2,
+    span = 0.3
+  ) +
+  facet_wrap(~anio_bes) +
+  scale_color_manual(values = c(
+    "Hepatitis A" = "#008B8B",
+    "Hepatitis B" = "#CD853F",
+    "Hepatitis C" = "#A9A9A9",
+    "Hepatitis D" = "#36648B",
+    "Hepatitis E" = "#8A2BE2"
+  )) +
+  labs(
+    x = "Semana epidemiológica",
+    y = "Número de notificaciones",
+    color = "Tipo de hepatitis"
+  ) +
+  theme_minimal()
+```
+
+#### Row
+
+##### Column
+
+```{r hepatitis2026}
+#| message: false
+#| warning: false
+#| echo: false
+#| title: !expr glue::glue("Año {anio_actual}")
+
+##Para la tabla de hepatitis 2026
+tabla_hepatitis2026 <- hepatitis_virales %>%
+  filter(
+    EVENTO %in% c(
+      "Hepatitis A",
+      "Hepatitis B",
+      "Hepatitis C",
+      "Hepatitis D",
+      "Hepatitis E"
+    ),
+    anio_bes == (anio_actual)
+  ) %>%
+  mutate(
+    clasificacion_bes = recode(
+      clasificacion_bes,
+      "C" = "Confirmado",
+      "P" = "Probable",
+      "D" = "Descartado",
+      "S" = "Sospechoso"
+    )
+  ) %>%
+  count(EVENTO, clasificacion_bes) %>%
+  pivot_wider(
+    names_from = clasificacion_bes,
+    values_from = n,
+    values_fill = 0
+  ) %>%
+  mutate(
+    Total = rowSums(across(where(is.numeric)))
+  ) %>%
+select(EVENTO, Confirmado, Probable, Sospechoso, Descartado, Total)
+
+
+##Para graficar la tabla
+tabla_hepatitis2026 %>%
+  gt()
+```
+
+##### Column
+
+```{r hepatitis_sexo}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 10
+#| fig.height: 6
+#| title: !expr glue::glue("Distribución de notificaciones de hepatitis virales según sexo {anio_actual - 1}-{anio_actual}")
+
+##Para hacer la tabla
+hepatitis_sexo <- caba_filtrada_actual %>%
+  filter(
+    GRUPO_EVENTO == "Hepatitis virales",
+    EVENTO %in% c(
+      "Hepatitis A",
+      "Hepatitis B",
+      "Hepatitis C",
+      "Hepatitis D",
+      "Hepatitis E"
+    ),
+    anio_bes %in% c(anio_actual - 1, anio_actual),
+    sepi_bes <= semana_actual
+  ) %>%
+  group_by(EVENTO, SEXO) %>%
+  summarise(
+    notificaciones = n(),
+    .groups = "drop"
+  )
+
+##Gráfico de barras
+ggplot(
+  hepatitis_sexo,
+  aes(
+    x = EVENTO,
+    y = notificaciones,
+    fill = SEXO
+  )
+) +
+  geom_col(position = "fill") +
+  scale_fill_manual(
+  values = c(
+    "F" = "#008B8B",
+    "M" = "#CD853F",
+    "A" = "#A9A9A9"
+  ),
+  labels = c(
+    "F" = "Femenino",
+    "M" = "Masculino",
+    "A" = "Otro"
+  )) +
+  labs(
+    x = "Tipo de Hepatitis",
+    y = "Proporción de notificaciones",
+    fill = "Sexo"
+  ) +
+  theme_minimal()
+```
+
+# Corredores endemicos
+
+Los corredores endémicos presentados se elaboraron utilizando una transformación logarítmica basada en casos e incluyen datos del período 2019-2025, se excluye el 2020.
+
+## Row {.tabset}
+
+```{r corredor diarrea}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 10
+#| fig.height: 6
+#| title: Corredor endemico notificacicones totales diarrea 
+
+caba_total <- caba_filtrada %>% 
+  filter(anio_bes!=2020)
+
+##Construcción de vectores de los últimos 6 años (excluyendo el año actual)
+
+anio_actual <- as.numeric(format(Sys.Date(), "%Y"))
+
+
+periodo_cor <- (anio_actual-7):(anio_actual-1)
+
+#Seleccion de años de la base historica y actual nominal, se puede aplicar a todas las patologias
+anios_corredor <- caba_total %>% 
+  filter(anio_bes %in% periodo_cor) 
+
+##Filtro diarreas_total por los últimos cinco años, excluyendo el año actual
+
+diarreas_total <- caba_total%>%
+  filter(recla_categoria == "ETAs")
+  
+diarreas_total <- diarreas_total%>%
+  filter(tablero_tipo_alerta == "aumento_inesperado_es_alerta")
+
+diarreas_total <- diarreas_total%>%
+  filter(GRUPO_EVENTO != "Otros eventos de importancia para la salud pública") %>%
+  filter(GRUPO_EVENTO !="Hepatitis virales") %>%
+  filter(GRUPO_EVENTO !="Equinococosis")
+
+diarreas_corredor <- diarreas_total%>%
+  filter(anio_bes %in% periodo_cor) 
+
+
+#Intento de hacer el corredor logarítmico
+
+#Corredores logarítmicos 
+
+#Diarreas
+
+log_diarrea <- diarreas_corredor %>%
+  filter(anio_bes != anio_actual) %>%
+  group_by(sepi_bes, anio_bes) %>%
+  summarise(casos = n())%>%
+  mutate(log_casos = log(casos + 1))
+
+#Media y DE por semana
+diarrea_corredor_log <- log_diarrea %>%
+  group_by(sepi_bes) %>%
+  summarise(
+    media_log = mean(log_casos, na.rm = TRUE),
+    sd_log = sd(log_casos, na.rm = TRUE))
+
+
+#limites
+diarrea_corredor_log <- diarrea_corredor_log %>%
+  mutate(
+    limite_inferior_log = media_log - sd_log,
+    limite_superior_log = media_log + sd_log,
+    media = exp(media_log),
+    limite_inferior = exp(limite_inferior_log),
+    limite_superior = exp(limite_superior_log),
+    maximo = limite_superior_log * 1.20,)
+
+#unir año actual
+diarrea_log_actual <- diarreas_total %>%
+  filter(anio_bes == anio_actual) %>%
+  group_by(sepi_bes) %>%
+  summarise( cantidad = n())
+
+
+### otra opcion con leyendas
+ggplot() +
+geom_ribbon(data = diarrea_corredor_log, aes(x = sepi_bes, ymin = 0, ymax = limite_inferior, fill = "Zona de éxito"), alpha = 0.3) +
+  geom_ribbon(data = diarrea_corredor_log, aes(x = sepi_bes, ymin = limite_inferior, ymax = media, fill = "Zona de seguridad"), alpha = 0.3) +
+  geom_ribbon(data = diarrea_corredor_log, aes(x = sepi_bes, ymin = media, ymax = limite_superior, fill = "Zona de brote"), alpha = 0.3) +
+  geom_ribbon(data = diarrea_corredor_log, aes(x = sepi_bes, ymin = limite_superior, ymax = 40, fill = "Zona de alerta"), alpha = 0.3) +
+  geom_line(data = diarrea_log_actual, aes(x = sepi_bes, y = cantidad, color = "Casos 2026"), size = 1) +
+  
+  scale_fill_manual(
+    name = "Zonas",
+    breaks = c("Zona de éxito", "Zona de seguridad", "Zona de brote", "Zona de alerta"),
+    values = c(
+      "Zona de éxito" = "#7AC5CD",
+      "Zona de seguridad" = "#EED5B7",
+      "Zona de brote" = "#FF7F50",
+      "Zona de alerta" = "#CD5B45"
+    )
+  ) +
+  
+  scale_color_manual(
+    name = "",
+    values = c("Casos 2026" = "#8B3E2F")
+  ) +
+  
+  labs(
+    title = "Corredor Endémico Diarreas",
+    y = "Casos",
+    x = "Semana Epidemiológica"
+  ) +
+  
+  theme_classic()
+
+
+```
+
+```{r corredor coqueluche}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 10
+#| fig.height: 6
+#| title: Corredor endemico notificaciones totales coqueluche
+##coqueluche
+
+coque_total <- caba_total%>%
+  filter(recla_categoria == "Respiratorias")
+
+coque_total <- coque_total%>%
+  filter(tablero_tipo_alerta == "aumento_inesperado_es_alerta")
+
+coque_total <- coque_total%>%
+  filter(GRUPO_EVENTO == "Coqueluche")
+
+coque_2026_corredor <- coque_total %>%
+  filter( anio_bes == anio_actual)
+
+agrupado_coque <- coque_total %>%
+  group_by( tablero_tipo_alerta, GRUPO_EVENTO) %>%
+  summarise( cantidad = n())
+
+coque_anio_actual <- coque_total%>%
+  filter(anio_bes %in% anio_actual)
+
+coque_corredor <- coque_total%>%
+  filter(anio_bes %in% periodo_cor) 
+
+#intento de corredor log
+
+log_coque <- coque_corredor %>%
+  filter(anio_bes != anio_actual) %>%
+  group_by(sepi_bes, anio_bes) %>%
+  summarise(casos = n())%>%
+  mutate(log_casos = log(casos + 1))
+
+#Media y DE por semana
+coque_corredor_log <- log_coque %>%
+  group_by(sepi_bes) %>%
+  summarise(
+    media_log = mean(log_casos, na.rm = TRUE),
+    sd_log = sd(log_casos, na.rm = TRUE)
+  )
+
+
+#limites
+coque_corredor_log <- coque_corredor_log %>%
+  mutate(
+    limite_inferior_log = media_log - sd_log,
+    limite_superior_log = media_log + sd_log,
+    media = exp(media_log),
+    limite_inferior = exp(limite_inferior_log),
+    limite_superior = exp(limite_superior_log),
+    maximo = limite_superior_log * 1.20,
+  )
+
+
+#unir año actual
+coque_log_actual <- coque_total %>%
+  filter(anio_bes == anio_actual) %>%
+  group_by(sepi_bes) %>%
+  summarise( cantidad = n())
+
+## Grafico coque
+
+
+ggplot() +
+  geom_ribbon(data = coque_corredor_log, aes(x = sepi_bes, ymin = 0, ymax = limite_inferior, fill = "Zona de éxito"), alpha = 0.3) +
+  geom_ribbon(data = coque_corredor_log, aes(x = sepi_bes, ymin = limite_inferior, ymax = media, fill = "Zona de seguridad"), alpha = 0.3) +
+  geom_ribbon(data = coque_corredor_log, aes(x = sepi_bes, ymin = media, ymax = limite_superior, fill = "Zona de brote"), alpha = 0.3) +
+  geom_ribbon(data = coque_corredor_log, aes(x = sepi_bes, ymin = limite_superior, ymax = 70, fill = "Zona de alerta"), alpha = 0.3) +
+  geom_line(data = coque_log_actual, aes(x = sepi_bes, y = cantidad, color = "Casos 2026"), size = 1) +
+  
+  scale_fill_manual(
+    name = "Zonas",
+    breaks = c("Zona de éxito", "Zona de seguridad", "Zona de brote", "Zona de alerta"),
+    values = c(
+      "Zona de éxito" = "#4682B4",
+      "Zona de seguridad" = "#ADD8E6",
+      "Zona de brote" = "#5CACEE",
+      "Zona de alerta" = "#68838B"
+    )
+  ) +
+  
+  scale_color_manual(
+    name = "",
+    values = c("Casos 2026" = "steelblue4")
+  ) +
+  
+  labs(
+    title = "Corredor Endémico Coqueluche",
+    y = "Casos",
+    x = "Semana Epidemiológica"
+  ) +
+  
+  theme_classic()
+  
+  
+  
+```
+
+```{r corredor sifilis}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 10
+#| fig.height: 6
+#| title: Corredor endemico notificaciones totales Sifilis
+##Corredor SIFILIS
+
+its_total <- caba_total%>%
+  filter(recla_categoria == "ITS")
+  
+its_grup <- its_total %>%
+  group_by(tablero_tipo_alerta, EVENTO)%>%
+  summarise(cantidad = n())
+
+sifilis_total <- its_total%>%
+  filter(tablero_tipo_alerta == "aumento_inesperado_es_alerta")
+
+sifilis_total <- sifilis_total%>%
+  filter(EVENTO == "Sífilis")
+
+#años corredor
+
+sifilis_corredor <- sifilis_total%>%
+  filter(anio_bes %in% periodo_cor) 
+
+#año actual
+sifilis_anio_actual <- sifilis_total%>%
+  filter(anio_bes %in% anio_actual)
+
+
+log_sifilis <- sifilis_corredor %>%
+  filter(anio_bes != anio_actual) %>%
+  group_by(sepi_bes, anio_bes) %>%
+  summarise(casos = n())%>%
+  mutate(log_casos = log(casos + 1))
+
+#Media y DE por semana
+sifilis_corredor_log <- log_sifilis %>%
+  group_by(sepi_bes) %>%
+  summarise(
+    media_log = mean(log_casos, na.rm = TRUE),
+    sd_log = sd(log_casos, na.rm = TRUE)
+  )
+
+
+#limites
+sifilis_corredor_log <- sifilis_corredor_log %>%
+  mutate(
+    limite_inferior_log = media_log - sd_log,
+    limite_superior_log = media_log + sd_log,
+    media = exp(media_log),
+    limite_inferior = exp(limite_inferior_log),
+    limite_superior = exp(limite_superior_log),
+    maximo = limite_superior_log * 1.20,
+  )
+
+
+#unir año actual
+sifilis_log_actual <- sifilis_total %>%
+  filter(anio_bes == anio_actual) %>%
+  group_by(sepi_bes) %>%
+  summarise( cantidad = n())
+
+
+### otra opcion con leyendas
+ggplot() +
+  geom_ribbon(data = sifilis_corredor_log, aes(x = sepi_bes, ymin = 0, ymax = limite_inferior, fill = "Zona de éxito"), alpha = 0.3) +
+  geom_ribbon(data = sifilis_corredor_log, aes(x = sepi_bes, ymin = limite_inferior, ymax = media, fill = "Zona de seguridad"), alpha = 0.3) +
+  geom_ribbon(data = sifilis_corredor_log, aes(x = sepi_bes, ymin = media, ymax = limite_superior, fill = "Zona de brote"), alpha = 0.3) +
+  geom_ribbon(data = sifilis_corredor_log, aes(x = sepi_bes, ymin = limite_superior, ymax = 90, fill = "Zona de alerta"), alpha = 0.3) +
+  geom_line(data = sifilis_log_actual, aes(x = sepi_bes, y = cantidad, color = "Casos 2026"), size = 1) +
+  
+  scale_fill_manual(
+    name = "Zonas",
+    breaks = c("Zona de éxito", "Zona de seguridad", "Zona de brote", "Zona de alerta"),
+    values = c(
+      "Zona de éxito" = "#66CDAA",
+      "Zona de seguridad" = "#CDC8B1",
+      "Zona de brote" = "#FF7F50",
+      "Zona de alerta" = "#CD5B45"
+    )
+  ) +
+  
+  scale_color_manual(
+    name = "",
+    values = c("Casos 2026" = "#008B8B")
+  ) +
+  
+  labs(
+    title = "Corredor Endémico Sífilis",
+    y = "Casos",
+    x = "Semana Epidemiológica"
+  ) +
+  
+  theme_classic()
+```
+
+```{r corredor sifilis congénita}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 10
+#| fig.height: 6
+#| title: Corredor endemico notificaciones totales Sifilis congénita
+##Corredor SIFILIS congenita
+
+materno_infantil_total <- caba_total%>%
+  filter(recla_categoria == "Materno-infantil")
+  
+materno_infantil_grup <- materno_infantil_total %>%
+  group_by(tablero_tipo_alerta, EVENTO)%>%
+  summarise(cantidad = n())
+
+sifilis_congenita_total <- materno_infantil_total%>%
+  filter(tablero_tipo_alerta == "aumento_inesperado_es_alerta")
+
+sifilis_congenita_total <- sifilis_congenita_total%>%
+  filter(EVENTO == "Sífilis congénita")
+
+#años corredor
+
+sifilis_congenita_corredor <- sifilis_congenita_total%>%
+  filter(anio_bes %in% periodo_cor) 
+
+#año actual
+sifilis_congenita_anio_actual <- sifilis_congenita_total%>%
+  filter(anio_bes %in% anio_actual)
+
+
+log_sifilis_congenita <- sifilis_congenita_corredor %>%
+  filter(anio_bes != anio_actual) %>%
+  group_by(sepi_bes, anio_bes) %>%
+  summarise(casos = n())%>%
+  mutate(log_casos = log(casos + 1))
+
+#Media y DE por semana
+sifilis_congenita_corredor_log <- log_sifilis_congenita %>%
+  group_by(sepi_bes) %>%
+  summarise(
+    media_log = mean(log_casos, na.rm = TRUE),
+    sd_log = sd(log_casos, na.rm = TRUE)
+  )
+
+
+#limites
+sifilis_congenita_corredor_log <- sifilis_congenita_corredor_log %>%
+  mutate(
+    limite_inferior_log = media_log - sd_log,
+    limite_superior_log = media_log + sd_log,
+    media = exp(media_log),
+    limite_inferior = exp(limite_inferior_log),
+    limite_superior = exp(limite_superior_log),
+    maximo = limite_superior_log * 1.20,
+  )
+
+
+#unir año actual
+sifilis_congenita_log_actual <- sifilis_congenita_total %>%
+  filter(anio_bes == anio_actual) %>%
+  group_by(sepi_bes) %>%
+  summarise( cantidad = n())
+
+
+### otra opcion con leyendas
+ggplot() +
+  geom_ribbon(data = sifilis_congenita_corredor_log, aes(x = sepi_bes, ymin = 0, ymax = limite_inferior, fill = "Zona de éxito"), alpha = 0.3) +
+  geom_ribbon(data = sifilis_congenita_corredor_log, aes(x = sepi_bes, ymin = limite_inferior, ymax = media, fill = "Zona de seguridad"), alpha = 0.3) +
+  geom_ribbon(data = sifilis_congenita_corredor_log, aes(x = sepi_bes, ymin = media, ymax = limite_superior, fill = "Zona de brote"), alpha = 0.3) +
+  geom_ribbon(data = sifilis_congenita_corredor_log, aes(x = sepi_bes, ymin = limite_superior, ymax = 90, fill = "Zona de alerta"), alpha = 0.3) +
+  geom_line(data = sifilis_congenita_log_actual, aes(x = sepi_bes, y = cantidad, color = "Casos 2026"), size = 1) +
+  
+  scale_fill_manual(
+    name = "Zonas",
+    breaks = c("Zona de éxito", "Zona de seguridad", "Zona de brote", "Zona de alerta"),
+    values = c(
+      "Zona de éxito" = "#66CDAA",
+      "Zona de seguridad" = "#CDC8B1",
+      "Zona de brote" = "#FF7F50",
+      "Zona de alerta" = "#CD5B45"
+    )
+  ) +
+  
+  scale_color_manual(
+    name = "",
+    values = c("Casos 2026" = "#008B8B")
+  ) +
+  
+  labs(
+    title = "Corredor Endémico Sífilis Congénita",
+    y = "Casos",
+    x = "Semana Epidemiológica"
+  ) +
+  
+  theme_classic()
+```
+
+```{r corredor dengue}
+#| message: false
+#| warning: false
+#| echo: false
+#| fig.width: 10
+#| fig.height: 6
+#| title: Corredor endemico notificaciones totales Dengue
+## Corredor Dengue
+
+zoonoticas_total <- caba_total %>%
+  filter(recla_categoria == "Zoonoticas y vectoriales") %>%
+  filter(tablero_tipo_alerta == "alerta") %>%
+  filter(EVENTO == "Dengue")
+
+#años corredor
+zoonoticas_corredor <- zoonoticas_total %>%
+  filter(anio_bes %in% periodo_cor)
+
+#año actual
+zoonoticas_anio_actual <- zoonoticas_total %>%
+  filter(anio_bes == anio_actual)
+
+#completar semanas
+log_zoonoticas <- zoonoticas_corredor %>%
+  filter(anio_bes != anio_actual) %>%
+  group_by(sepi_bes, anio_bes) %>%
+  summarise(casos = n(), .groups = "drop") %>%
+  complete(sepi_bes = 1:52, anio_bes, fill = list(casos = 0)) %>%
+  mutate(log_casos = log(casos + 1))
+
+#corredor
+zoonoticas_corredor_log <- log_zoonoticas %>%
+  group_by(sepi_bes) %>%
+  summarise(
+    media_log = mean(log_casos, na.rm = TRUE),
+    sd_log = sd(log_casos, na.rm = TRUE),
+    .groups = "drop"
+  ) %>%
+  mutate(
+    limite_inferior_log = media_log - sd_log,
+    limite_superior_log = media_log + sd_log,
+    media = exp(media_log),
+    limite_inferior = exp(limite_inferior_log),
+    limite_superior = exp(limite_superior_log)
+  )
+
+#año actual
+zoonoticas_log_actual <- zoonoticas_anio_actual %>%
+  group_by(sepi_bes) %>%
+  summarise(cantidad = n(), .groups = "drop")
+
+#máximo global para zona de alerta
+max_y <- max(
+  zoonoticas_corredor_log$limite_superior,
+  zoonoticas_log_actual$cantidad,
+  na.rm = TRUE
+) * 1.3
+
+##gráfico
+ggplot() +
+
+  #zona de éxito
+  geom_ribbon(data = zoonoticas_corredor_log,
+              aes(x = sepi_bes, ymin = 0, ymax = limite_inferior, fill = "Zona de éxito"),
+              alpha = 0.4) +
+
+  #zona de seguridad
+  geom_ribbon(data = zoonoticas_corredor_log,
+              aes(x = sepi_bes, ymin = limite_inferior, ymax = media, fill = "Zona de seguridad"),
+              alpha = 0.4) +
+
+  #zona de brote
+  geom_ribbon(data = zoonoticas_corredor_log,
+              aes(x = sepi_bes, ymin = media, ymax = limite_superior, fill = "Zona de brote"),
+              alpha = 0.4) +
+
+  #zona de alerta
+  geom_ribbon(data = zoonoticas_corredor_log,
+              aes(x = sepi_bes, ymin = limite_superior, ymax = max_y, fill = "Zona de alerta"),
+              alpha = 0.4) +
+
+  #línea año actual
+  geom_line(data = zoonoticas_log_actual,
+            aes(x = sepi_bes, y = cantidad, color = "Año actual"),
+            size = 1.2) +
+
+  scale_fill_manual(
+    name = "Corredor endémico",
+    values = c(
+      "Zona de éxito" = "#2E8B57",
+      "Zona de seguridad" = "#FFD700",
+      "Zona de brote" = "#FF8C00",
+      "Zona de alerta" = "#CD5B45"
+    ),
+    breaks = c( 
+      "Zona de éxito",
+      "Zona de seguridad",
+      "Zona de brote",
+      "Zona de alerta"
+    )
+  ) +
+
+  scale_color_manual(
+    name = "",
+    values = c("Año actual" = "#1E3A8A")
+  ) +
+
+  scale_y_log10() +
+
+  labs(
+    title = "Corredor endémico Dengue",
+    x = "Semana epidemiológica",
+    y = "Casos (escala logarítmica)"
+  ) +
+
+  theme_classic() +
+  theme(
+    plot.title = element_text(face = "plain", size = 14),
+    legend.position = "right"
+  )
+```
+
+# Glosario {scrolling="true"}
+
+Glosario de eventos por grupo de eventos
+
+## Row
+
+### Column
+
+```{r glosario zoonoticas}
+#| message: false
+#| warning: false
+#| echo: false
+#| Title: "Glosario de eventos por recla_categoria"
+
+
+tabla_zoonoticas <- caba_filtrada %>%
+  filter(recla_categoria == "Zoonoticas y vectoriales") %>%
+  distinct(EVENTO)
+
+tabla_zoonoticas %>%
+  rename(
+    Evento = EVENTO)  %>%
+  knitr::kable(
+    caption = "Zoonoticas y vectoriales",
+    align = "c"
+  ) %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+
+
+
+```
+
+### Column
+
+```{r glosario respiratoria}
+#| message: false
+#| warning: false
+#| echo: false
+
+
+tabla_respiratorias <- caba_filtrada %>%
+  filter(recla_categoria == "Respiratorias") %>%
+  distinct(EVENTO)
+
+tabla_respiratorias %>%
+  rename(
+    Evento = EVENTO)  %>%
+  knitr::kable(
+    caption = "Respiratorias",
+    align = "c"
+  ) %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+
+
+```
+
+### Column
+
+```{r glosario its}
+#| message: false
+#| warning: false
+#| echo: false
+
+tabla_its <- caba_filtrada %>%
+  filter(recla_categoria == "ITS") %>%
+  distinct(EVENTO)
+
+tabla_its %>%
+  rename(
+    Evento = EVENTO)  %>%
+  knitr::kable(
+    caption = "Infecciones de Transmision Sexual(ITS)",
+    align = "c"
+  ) %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+```
+
+## Row
+
+### Column
+
+```{r glosario materno-infantil}
+#| message: false
+#| warning: false
+#| echo: false
+
+tabla_materno_infantil <- caba_filtrada %>%
+  filter(recla_categoria == "Materno-infantil") %>%
+  distinct(EVENTO)
+
+tabla_materno_infantil %>%
+  rename(
+    Evento = EVENTO)  %>%
+  knitr::kable(
+    caption = "Materno Infantil",
+    align = "c"
+  ) %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+```
+
+### Column
+
+```{r glosario etas}
+#| message: false
+#| warning: false
+#| echo: false
+
+
+tabla_etas <- caba_filtrada %>%
+  filter(recla_categoria == "ETAs") %>%
+  distinct(EVENTO)
+
+tabla_etas %>%
+  rename(
+    Evento = EVENTO)  %>%
+  knitr::kable(
+    caption = "Enfermedades Transmitidas por Alimentos(ETAs)",
+    align = "c"
+  ) %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+
+```
+
+### Column
+
+```{r golsario efe}
+#| message: false
+#| warning: false
+#| echo: false
+
+tabla_efe <- caba_filtrada %>%
+  filter(recla_categoria == "EFE") %>%
+  distinct(EVENTO)
+
+tabla_efe %>%
+  rename(
+    Evento = EVENTO)  %>%
+  knitr::kable(
+    caption = "Enfermedad Febril Exantematica (EFE)",
+    align = "c"
+  ) %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+
+
+
+```
+
+## Row
+
+### Column
+
+```{r glosario lesiones}
+#| message: false
+#| warning: false
+#| echo: false
+
+
+
+tabla_lesiones_salud_mental_otros <- caba_filtrada %>%
+  filter(recla_categoria == "Lesiones, salud mental y otros") %>%
+  distinct(EVENTO)
+
+tabla_lesiones_salud_mental_otros %>%
+  rename(
+    Evento = EVENTO)  %>%
+  knitr::kable(
+    caption = "Lesiones, salud mental y otros",
+    align = "c"
+  ) %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+
+```
+
+### Column
+
+```{r glosario intoxicaciones}
+#| message: false
+#| warning: false
+#| echo: false
+
+tabla_intoxicaciones_exposiciones <- caba_filtrada %>%
+  filter(recla_categoria == "Intoxicaciones/Exposiciones") %>%
+  distinct(EVENTO)
+
+tabla_intoxicaciones_exposiciones %>%
+  rename(
+    Evento = EVENTO)  %>%
+  knitr::kable(
+    caption = "Intoxicaciones/Exposiciones",
+    align = "c"
+  ) %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+
+```
+
+### Column
+
+```{r glosario otros eventos}
+#| message: false
+#| warning: false
+#| echo: false
+
+
+tabla_otros_eventos <- caba_filtrada %>%
+  filter(recla_categoria %in% c("Otros eventos de importancia", "Otras transmisibles")) %>%
+  distinct(EVENTO)
+
+tabla_otros_eventos %>%
+  rename(
+    Evento = EVENTO)  %>%
+  knitr::kable(
+    caption = "Otros eventos",
+    align = "c"
+  ) %>%
+  kableExtra::kable_styling(full_width = FALSE, position = "left")
+
+```
